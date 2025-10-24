@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Seal3D - Client-Side File Encryption
+
+A modern, sleek web application for secure AES-256-GCM file encryption powered by the native Web Crypto API. Built with Next.js.
+
+## Features
+
+✨ **Client-Side Only Encryption** - Your files and passwords never leave your device
+🚀 **Native Browser Encryption** - Fast, efficient AES-256-GCM using Web Crypto API
+🎨 **Modern UI** - Beautiful, responsive interface with dark mode support
+📁 **Drag & Drop** - Easy file upload with drag-and-drop support
+🔒 **Secure** - Industry-standard AES-256-GCM encryption with PBKDF2 key derivation
+⚡ **No Server Required** - All processing happens in your browser
+🔑 **Password Based** - Secure key derivation from passwords
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+ 
+- npm or pnpm
+
+### Installation
+
+```bash
+npm install
+```
+
+### Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Build for Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## How to Use
 
-To learn more about Next.js, take a look at the following resources:
+### Encrypting a File
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Select "Encrypt" mode
+2. Drag and drop a file or click to browse
+3. Enter a strong password
+4. Click "Encrypt & Download"
+5. Your encrypted file will be downloaded with a `.encrypted` extension
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Decrypting a File
 
-## Deploy on Vercel
+1. Select "Decrypt" mode
+2. Upload the encrypted file (`.encrypted`)
+3. Enter the same password used for encryption
+4. Click "Decrypt & Download"
+5. Your original file will be downloaded
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Security Notes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Algorithm**: AES-256-GCM (Galois/Counter Mode) 
+- **Key Derivation**: PBKDF2-HMAC-SHA256 with 100,000 iterations
+- **Random Salt**: 16 bytes generated per encryption
+- **Random IV**: 12 bytes generated per encryption
+- All encryption happens entirely in your browser using native Web Crypto API
+- Files are never uploaded to any server
+- Passwords are never transmitted or stored
+- Use strong, unique passwords for maximum security
+- Keep your passwords safe - lost passwords cannot be recovered
+
+## Technology Stack
+
+- **Next.js 16** - React framework with Turbopack
+- **TypeScript** - Type-safe code
+- **Tailwind CSS** - Modern styling
+- **Web Crypto API** - Native browser AES-256-GCM encryption & PBKDF2 key derivation
+- **Lucide React** - Beautiful icons
+
+## License
+
+MIT

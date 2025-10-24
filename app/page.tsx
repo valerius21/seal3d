@@ -41,7 +41,7 @@ export default function Home() {
   };
 
   // Derive AES-GCM key from password using PBKDF2
-  const deriveKey = async (password: string, salt: Uint8Array): Promise<CryptoKey> => {
+  const deriveKey = async (password: string, salt: BufferSource): Promise<CryptoKey> => {
     const encoder = new TextEncoder();
     const passwordBuffer = encoder.encode(password);
 
@@ -58,7 +58,7 @@ export default function Home() {
     return crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
-        salt: salt,
+        salt,
         iterations: 100000,
         hash: 'SHA-256',
       },
@@ -77,14 +77,15 @@ export default function Home() {
     // Derive key from password
     const key = await deriveKey(password, salt);
 
-    // Encrypt the data
+    // Encrypt the data (create a new Uint8Array to ensure proper ArrayBuffer type)
+    const dataToEncrypt = new Uint8Array(data);
     const encryptedData = await crypto.subtle.encrypt(
       {
         name: 'AES-GCM',
         iv: iv,
       },
       key,
-      data
+      dataToEncrypt
     );
 
     // Combine salt + iv + encrypted data
@@ -98,10 +99,10 @@ export default function Home() {
   };
 
   const decryptFile = async (data: Uint8Array, password: string): Promise<Uint8Array> => {
-    // Extract salt, IV, and encrypted data
-    const salt = data.slice(0, 16);
-    const iv = data.slice(16, 28);
-    const encryptedData = data.slice(28);
+    // Extract salt, IV, and encrypted data (create new arrays to ensure proper ArrayBuffer type)
+    const salt = new Uint8Array(data.slice(0, 16));
+    const iv = new Uint8Array(data.slice(16, 28));
+    const encryptedData = new Uint8Array(data.slice(28));
 
     // Derive key from password
     const key = await deriveKey(password, salt);
@@ -153,8 +154,9 @@ export default function Home() {
         setStatus({ type: 'success', message: 'File decrypted successfully!' });
       }
 
-      // Download the result
-      const blob = new Blob([result], { type: 'application/octet-stream' });
+      // Download the result (convert to proper ArrayBuffer for Blob)
+      const resultBuffer = result.buffer.slice(result.byteOffset, result.byteOffset + result.byteLength) as ArrayBuffer;
+      const blob = new Blob([resultBuffer], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

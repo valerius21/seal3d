@@ -1,51 +1,6 @@
 {
   "version": 3,
   "middleware": {},
-  "sortedMiddleware": [],
-  "functions": {
-    "/opengraph-image/route": {
-      "files": [
-        "server/middleware-build-manifest.js",
-        "server/interception-route-rewrite-manifest.js",
-        "server/server-reference-manifest.js",
-        "server/app/opengraph-image/route_client-reference-manifest.js",
-        "server/edge/chunks/_next-internal_server_app_opengraph-image_route_actions_238d033d.js",
-        "server/edge/chunks/[root-of-the-server]__869e84b7._.js",
-        "server/edge/chunks/[root-of-the-server]__e7e51a7a._.js",
-        "server/edge/chunks/node_modules_next_dist_compiled_@vercel_og_16be1ace._.js",
-        "server/edge/chunks/turbopack-edge-wrapper_04044328.js"
-      ],
-      "name": "app/opengraph-image/route",
-      "page": "/opengraph-image/route",
-      "matchers": [
-        {
-          "regexp": "^/opengraph-image(?:/)?$",
-          "originalSource": "/opengraph-image"
-        }
-      ],
-      "wasm": [
-        {
-          "name": "wasm_fdb56e4cc5936d29",
-          "filePath": "server/edge/chunks/node_modules_next_dist_compiled_@vercel_og_resvg_23ace1ce.wasm"
-        },
-        {
-          "name": "wasm_1ccdc983b1fd9f87",
-          "filePath": "server/edge/chunks/node_modules_next_dist_compiled_@vercel_og_yoga_23ace1ce.wasm"
-        }
-      ],
-      "assets": [
-        {
-          "name": "server/edge/assets/noto-sans-v27-latin-regular.bdfa676c.ttf",
-          "filePath": "server/edge/assets/noto-sans-v27-latin-regular.bdfa676c.ttf"
-        }
-      ],
-      "env": {
-        "__NEXT_BUILD_ID": "zufWOHeagl1Zh3pBGLzkT",
-        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "yNfXh95HobHjYZF2HL+II+GOFpNfZY3TbT2hQPkri4k=",
-        "__NEXT_PREVIEW_MODE_ID": "dfaa85a23ee53f5ea326bae16d28febe",
-        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "921b1a3600c24b979e1dea92bfb98051dd3040d38eab091ff3fa7c0c9097a757",
-        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "ec98bfe6b14b9f2ebbfed229a6051b1b6eb6dab0c50a6ff6a2023c5c0dfca831"
-      }
-    }
-  }
+  "functions": {},
+  "sortedMiddleware": []
 }

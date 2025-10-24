@@ -48,20 +48,11 @@ export const metadata: Metadata = {
     title: "Seal3D - Client-Side File Encryption",
     description: "Secure AES-256-GCM file encryption powered by Web Crypto API. A modern hat.sh alternative with zero server uploads.",
     siteName: "Seal3D",
-    images: [
-      {
-        url: "/opengraph-image",
-        width: 1200,
-        height: 630,
-        alt: "Seal3D - Client-Side File Encryption"
-      }
-    ]
   },
   twitter: {
     card: "summary_large_image",
     title: "Seal3D - Client-Side File Encryption",
     description: "Secure AES-256-GCM file encryption powered by Web Crypto API. A modern hat.sh alternative.",
-    images: ["/opengraph-image"],
     creator: "@valerius21"
   },
   robots: {

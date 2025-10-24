@@ -1,0 +1,23 @@
+{
+    "name": "Seal3D - Client-Side File Encryption",
+    "short_name": "Seal3D",
+    "description": "Secure AES-256-GCM file encryption powered by Web Crypto API. A modern hat.sh alternative.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#09090b",
+    "theme_color": "#3b82f6",
+    "orientation": "portrait",
+    "categories": [
+        "security",
+        "utilities",
+        "productivity"
+    ],
+    "icons": [
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}

@@ -336,12 +336,12 @@ export default function Home() {
                   {mode === 'encrypt' ? (
                     <>
                       <Lock className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                      Encrypt & Download
+                      Encrypt & Save
                     </>
                   ) : (
                     <>
                       <Unlock className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                      Decrypt & Download
+                      Decrypt & Save
                     </>
                   )}
                 </>

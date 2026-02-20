@@ -1,24 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="12" fill="url(#gradient)"/>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#3b82f6"/>
-      <stop offset="100%" stop-color="#4f46e5"/>
+    <linearGradient id="gradient" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
     </linearGradient>
   </defs>
-  <!-- Rounded square background -->
-  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
-  <!-- Shield outline (based on Lucide Shield path, scaled to center) -->
-  <g transform="translate(128,96) scale(10.67)">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
-          fill="none" stroke="white" stroke-width="1.8"
-          stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
-  <!-- Lock body -->
-  <rect x="216" y="268" width="80" height="64" rx="10" fill="white"/>
-  <!-- Lock shackle -->
-  <path d="M232 268v-24a24 24 0 0 1 48 0v24"
-        fill="none" stroke="white" stroke-width="14"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Keyhole -->
-  <circle cx="256" cy="296" r="10" fill="url(#bg)"/>
+  <path d="M32 14L20 19.5V28.5C20 36.5 24.5 44 32 46C39.5 44 44 36.5 44 28.5V19.5L32 14Z" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
+

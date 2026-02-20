@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { Lock, Unlock, Upload, FileCheck, Shield, AlertCircle } from 'lucide-react';
-import { encryptFile, decryptFile } from '@/lib/crypto';
+import { encryptStream, decryptStream } from '@/lib/crypto';
 
 export default function Home() {
   const [mode, setMode] = useState<'encrypt' | 'decrypt'>('encrypt');
@@ -51,33 +51,24 @@ export default function Home() {
     setStatus(null);
 
     try {
-      // Read file
-      const arrayBuffer = await file.arrayBuffer();
-      const fileData = new Uint8Array(arrayBuffer);
-
-      let result: Uint8Array;
+      let outputStream: ReadableStream<Uint8Array>;
       let newFileName: string;
 
       if (mode === 'encrypt') {
-        // Encrypt
-        result = await encryptFile(fileData, password);
+        outputStream = encryptStream(file.stream(), password);
         newFileName = `${file.name}.encrypted`;
-        setStatus({ type: 'success', message: 'File encrypted successfully!' });
       } else {
-        // Decrypt
-        if (fileData.length < 28) {
+        if (file.size < 33) {  // 1 (version) + 16 (salt) + 16 (fileId)
           throw new Error('Invalid encrypted file format');
         }
-        result = await decryptFile(fileData, password);
+        outputStream = decryptStream(file.stream(), password);
         newFileName = file.name.endsWith('.encrypted')
           ? file.name.slice(0, -10)
           : `${file.name}.decrypted`;
-        setStatus({ type: 'success', message: 'File decrypted successfully!' });
       }
 
-      // Download the result (convert to proper ArrayBuffer for Blob)
-      const resultBuffer = result.buffer.slice(result.byteOffset, result.byteOffset + result.byteLength) as ArrayBuffer;
-      const blob = new Blob([resultBuffer], { type: 'application/octet-stream' });
+      // Collect the stream into a Blob without buffering a second Uint8Array copy
+      const blob = await new Response(outputStream).blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -87,6 +78,10 @@ export default function Home() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
+      setStatus({
+        type: 'success',
+        message: mode === 'encrypt' ? 'File encrypted successfully!' : 'File decrypted successfully!',
+      });
     } catch (error) {
       console.error('Processing error:', error);
       setStatus({

@@ -2,7 +2,7 @@
 // Also see [its crypto audit](https://defuse.ca/audits/gocryptfs.htm)
 //
 // Effectively, we chunk every 5MiB and use AES256-GCM (GCM to find out if the crypto worked through auth tag).
-// Now we furhtermore ensure against 2 attack vectors:
+// Now we furthermore ensure against 2 attack vectors:
 //
 // 1. **Changing chunks between files:** The chunk size is known to the attacker. So if the attacker knows (or assumes)
 //    that the lazy user always uses the same password, it could take two files and write chunks from file 1 to file 2,
@@ -12,23 +12,26 @@
 // 2. **Changing chunks within files:** This obviously doesn't secure against tampering within a single file. For this,
 //    we also give each chunk a number (if we just increase by 1, we dont even have to store it) and add it to the aad.
 
+const VERSION = 1;       // File format version
+const VERSION_SIZE = 1;  // 8-bit version
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MiB
 const FILE_ID_SIZE = 16; // 128-bit file ID
 const IV_SIZE = 12;      // 96-bit IV for AES-GCM
+const GCM_TAG_SIZE = 16; // 128-bit GCM auth tag
 const SALT_SIZE = 16;
 const PBKDF2_ITERATIONS = 100000;
 
+const MAX_ENC_BLOCK_SIZE = IV_SIZE + CHUNK_SIZE + GCM_TAG_SIZE;
+
 // Derive AES-GCM key from password using PBKDF2
 export const deriveKey = async (password: string, salt: BufferSource): Promise<CryptoKey> => {
-  const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(password),
+    new TextEncoder().encode(password),
     'PBKDF2',
     false,
-    ['deriveBits', 'deriveKey']
+    ['deriveKey']
   );
-
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     keyMaterial,
@@ -46,80 +49,99 @@ const buildAAD = (fileId: Uint8Array, blockIndex: number): Uint8Array => {
   return aad;
 };
 
+const append = (buf: Uint8Array, chunk: Uint8Array): Uint8Array => {
+  const merged = new Uint8Array(buf.length + chunk.length);
+  merged.set(buf, 0);
+  merged.set(chunk, buf.length);
+  return merged;
+};
+
 /**
- * Encrypted file layout:
- *   [16-byte salt][16-byte fileId][N blocks...]
+ * Encrypted stream/file layout:
+ * [1-byte version][16-byte salt][16-byte fileId][N blocks...]
  *
  * Each block:
- *   [12-byte IV][ciphertext + 16-byte GCM auth tag]
+ * [12-byte IV][ciphertext + 16-byte GCM auth tag]
  */
-export const encryptFile = async (data: Uint8Array, password: string): Promise<Uint8Array> => {
-  const salt = crypto.getRandomValues(new Uint8Array(SALT_SIZE));
-  const fileId = crypto.getRandomValues(new Uint8Array(FILE_ID_SIZE));
-  const key = await deriveKey(password, salt);
+export function encryptStream(
+  input: ReadableStream<Uint8Array>,
+  password: string
+): ReadableStream<Uint8Array> {
+  let blockIndex = 0;
+  let buffer     = new Uint8Array(0);
+  let totalBytes = 0;
+  let fileId: Uint8Array;
+  let key: CryptoKey;
 
-  const chunks: Uint8Array[] = [];
-  if (data.length === 0) throw new Error('Cannot encrypt empty file.');
-  const numBlocks = Math.ceil(data.length / CHUNK_SIZE);
-
-  for (let i = 0; i < numBlocks; i++) {
-    const iv = crypto.getRandomValues(new Uint8Array(IV_SIZE));
-    const plaintext = data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-    const aad = buildAAD(fileId, i);
-
-    const ciphertext = await crypto.subtle.encrypt(
+  const encryptBlock = async (
+    plaintext: Uint8Array,
+    controller: TransformStreamDefaultController<Uint8Array>
+  ): Promise<void> => {
+    const iv  = crypto.getRandomValues(new Uint8Array(IV_SIZE));
+    const aad = buildAAD(fileId, blockIndex++);
+    const ct  = await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv, additionalData: aad },
       key,
       plaintext
     );
-
-    const block = new Uint8Array(IV_SIZE + ciphertext.byteLength);
+    const block = new Uint8Array(IV_SIZE + ct.byteLength);
     block.set(iv, 0);
-    block.set(new Uint8Array(ciphertext), IV_SIZE);
-    chunks.push(block);
-  }
+    block.set(new Uint8Array(ct), IV_SIZE);
+    controller.enqueue(block);
+  };
 
-  // Compute total size and assemble output
-  const totalSize = SALT_SIZE + FILE_ID_SIZE + chunks.reduce((acc, c) => acc + c.length, 0);
-  const result = new Uint8Array(totalSize);
-  let offset = 0;
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    async start(controller) {
+      const salt = crypto.getRandomValues(new Uint8Array(SALT_SIZE));
+      fileId     = crypto.getRandomValues(new Uint8Array(FILE_ID_SIZE));
+      key        = await deriveKey(password, salt);
 
-  result.set(salt, offset);   offset += SALT_SIZE;
-  result.set(fileId, offset); offset += FILE_ID_SIZE;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
+      const header = new Uint8Array(VERSION_SIZE + SALT_SIZE + FILE_ID_SIZE);
+      header[0] = VERSION;
+      header.set(salt,   VERSION_SIZE);
+      header.set(fileId, VERSION_SIZE + SALT_SIZE);
+      controller.enqueue(header);
+    },
 
-  return result;
-};
+    async transform(chunk, controller) {
+      totalBytes += chunk.length;
+      buffer = append(buffer, chunk);
 
-export const decryptFile = async (data: Uint8Array, password: string): Promise<Uint8Array> => {
-  let offset = 0;
+      while (buffer.length >= CHUNK_SIZE) {
+        await encryptBlock(buffer.slice(0, CHUNK_SIZE), controller);
+        buffer = buffer.slice(CHUNK_SIZE);
+      }
+    },
 
-  const salt   = data.slice(offset, offset + SALT_SIZE);   offset += SALT_SIZE;
-  const fileId = data.slice(offset, offset + FILE_ID_SIZE); offset += FILE_ID_SIZE;
+    async flush(controller) {
+      if (totalBytes === 0) throw new Error('Cannot encrypt empty stream.');
+      // buffer may be empty if input size was an exact multiple of CHUNK_SIZE
+      if (buffer.length > 0) await encryptBlock(buffer, controller);
+    },
+  });
 
-  const key = await deriveKey(password, salt);
+  return input.pipeThrough(transform);
+}
 
-  // Each block is IV_SIZE + CHUNK_SIZE + 16 (auth tag), except the last block may be smaller.
-  // We don't know chunk count upfront, so we decrypt block-by-block until EOF.
-  // The encrypted chunk size = IV_SIZE + plaintext_size + 16 (GCM tag).
-  // Maximum encrypted block size (for a full 5 MiB plaintext chunk):
-  const MAX_BLOCK_ENC_SIZE = IV_SIZE + CHUNK_SIZE + 16;
+export function decryptStream(
+  input: ReadableStream<Uint8Array>,
+  password: string
+): ReadableStream<Uint8Array> {
+  const HEADER_SIZE = VERSION_SIZE + SALT_SIZE + FILE_ID_SIZE;
 
-  const plaintextChunks: Uint8Array[] = [];
-  let blockIndex = 0;
+  let buf          = new Uint8Array(0);
+  let blockIndex   = 0;
+  let headerParsed = false;
+  let key: CryptoKey;
+  let fileId: Uint8Array;
 
-  while (offset < data.length) {
-    // Determine how many bytes remain; a block is at most MAX_BLOCK_ENC_SIZE
-    const remaining = data.length - offset;
-    const blockEncSize = Math.min(remaining, MAX_BLOCK_ENC_SIZE);
-
-    const iv         = data.slice(offset, offset + IV_SIZE);
-    const ciphertext = data.slice(offset + IV_SIZE, offset + blockEncSize);
+  const decryptBlock = async (
+    encBlock: Uint8Array,
+    controller: TransformStreamDefaultController<Uint8Array>
+  ): Promise<void> => {
+    const iv         = encBlock.slice(0, IV_SIZE);
+    const ciphertext = encBlock.slice(IV_SIZE);
     const aad        = buildAAD(fileId, blockIndex);
-
     let plaintext: ArrayBuffer;
     try {
       plaintext = await crypto.subtle.decrypt(
@@ -133,20 +155,81 @@ export const decryptFile = async (data: Uint8Array, password: string): Promise<U
       }
       throw new Error(`Decryption failed on block ${blockIndex}: file may be corrupted.`);
     }
-
-    plaintextChunks.push(new Uint8Array(plaintext));
-    offset += blockEncSize;
     blockIndex++;
-  }
+    controller.enqueue(new Uint8Array(plaintext));
+  };
 
-  // Reassemble plaintext
-  const totalSize = plaintextChunks.reduce((acc, c) => acc + c.length, 0);
-  const result = new Uint8Array(totalSize);
-  let writeOffset = 0;
-  for (const chunk of plaintextChunks) {
-    result.set(chunk, writeOffset);
-    writeOffset += chunk.length;
-  }
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    async transform(chunk, controller) {
+      buf = append(buf, chunk);
 
-  return result;
+      if (!headerParsed) {
+        if (buf.length < HEADER_SIZE) return; // need more data
+
+        let offset = 0;
+        const version = buf[offset]; offset += VERSION_SIZE;
+        if (version !== VERSION) throw new Error(`Unsupported file version: ${version}`);
+
+        const salt = buf.slice(offset, offset + SALT_SIZE); offset += SALT_SIZE;
+        fileId     = buf.slice(offset, offset + FILE_ID_SIZE); offset += FILE_ID_SIZE;
+        buf        = buf.slice(offset);
+
+        key          = await deriveKey(password, salt);
+        headerParsed = true;
+      }
+
+      // Flush all complete blocks, but hold back the last MAX_ENC_BLOCK_SIZE bytes
+      // Might be last block, might not
+      while (buf.length > MAX_ENC_BLOCK_SIZE) {
+        await decryptBlock(buf.slice(0, MAX_ENC_BLOCK_SIZE), controller);
+        buf = buf.slice(MAX_ENC_BLOCK_SIZE);
+      }
+    },
+
+    async flush(controller) {
+      if (!headerParsed) throw new Error('Stream too short: missing header.');
+
+      while (buf.length > 0) {
+        const blockSize = Math.min(buf.length, MAX_ENC_BLOCK_SIZE);
+        await decryptBlock(buf.slice(0, blockSize), controller);
+        buf = buf.slice(blockSize);
+      }
+    },
+  });
+
+  return input.pipeThrough(transform);
+}
+
+// For easy use if a streaming API is not needed (possible library use)
+export const encryptFile = async (data: Uint8Array, password: string): Promise<Uint8Array> => {
+  if (data.length === 0) throw new Error('Cannot encrypt empty file.');
+  const stream = encryptStream(
+    new ReadableStream({ start(c) { c.enqueue(data); c.close(); } }),
+    password
+  );
+  return collectStream(stream);
 };
+
+// For easy use if a streaming API is not needed (possible library use)
+export const decryptFile = async (data: Uint8Array, password: string): Promise<Uint8Array> => {
+  const stream = decryptStream(
+    new ReadableStream({ start(c) { c.enqueue(data); c.close(); } }),
+    password
+  );
+  return collectStream(stream);
+};
+
+async function collectStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out   = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}

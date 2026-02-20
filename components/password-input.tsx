@@ -13,17 +13,23 @@ interface PasswordInputProps {
 export function PasswordInput({ password, onChange, mode, onSubmit }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [capitalize, setCapitalize] = useState(false);
+  const [includeNumber, setIncludeNumber] = useState(false);
 
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
     try {
-      const passphrase = await generatePassphrase();
+      const passphrase = await generatePassphrase({
+        wordCount: 6,
+        capitalize,
+        includeNumber,
+      });
       onChange(passphrase);
       setVisible(true);
     } finally {
       setGenerating(false);
     }
-  }, [onChange]);
+  }, [onChange, capitalize, includeNumber]);
 
   return (
     <div className="p-8 border-t border-zinc-200 dark:border-zinc-800">
@@ -63,6 +69,30 @@ export function PasswordInput({ password, onChange, mode, onSubmit }: PasswordIn
           </button>
         )}
       </div>
+
+      {mode === 'encrypt' && (
+        <div className="mt-3 flex items-center gap-4">
+          <label className="flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={capitalize}
+              onChange={(e) => setCapitalize(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-600 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer accent-blue-600"
+            />
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">Capitalize</span>
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeNumber}
+              onChange={(e) => setIncludeNumber(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-600 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer accent-blue-600"
+            />
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">Add numbers</span>
+          </label>
+        </div>
+      )}
+
       <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
         {mode === 'encrypt'
           ? 'Choose a strong password or generate a passphrase'

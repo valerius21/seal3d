@@ -10,5 +10,6 @@
   packages = [
     pkgs.git
     pkgs.bun
+    pkgs.act
   ];
 }

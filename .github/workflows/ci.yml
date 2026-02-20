@@ -36,19 +36,3 @@ jobs:
         with:
           name: coverage-summary
           path: coverage/coverage-summary.json
-
-      - name: Generate coverage badge
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: jaywcjlove/coverage-badges-cli@main
-        with:
-          source: coverage/coverage-summary.json
-          output: coverage/badge.svg
-
-      - name: Deploy badge to GitHub Pages
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./coverage
-          destination_dir: badges
-          keep_files: true

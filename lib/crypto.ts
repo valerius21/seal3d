@@ -23,7 +23,6 @@ const PBKDF2_ITERATIONS = 100000;
 
 const MAX_ENC_BLOCK_SIZE = IV_SIZE + CHUNK_SIZE + GCM_TAG_SIZE;
 
-// Derive AES-GCM key from password using PBKDF2
 export const deriveKey = async (password: string, salt: BufferSource): Promise<CryptoKey> => {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -41,11 +40,10 @@ export const deriveKey = async (password: string, salt: BufferSource): Promise<C
   );
 };
 
-// Build AAD for block i: fileId (16 bytes) || blockIndex (uint32, big-endian, 4 bytes)
 const buildAAD = (fileId: Uint8Array, blockIndex: number): Uint8Array<ArrayBuffer> => {
   const aad = new Uint8Array(FILE_ID_SIZE + 4);
   aad.set(fileId, 0);
-  new DataView(aad.buffer).setUint32(FILE_ID_SIZE, blockIndex, false /* big-endian */);
+  new DataView(aad.buffer).setUint32(FILE_ID_SIZE, blockIndex, false);
   return aad;
 };
 
@@ -115,7 +113,6 @@ export function encryptStream(
 
     async flush(controller) {
       if (totalBytes === 0) throw new Error('Cannot encrypt empty stream.');
-      // buffer may be empty if input size was an exact multiple of CHUNK_SIZE
       if (buffer.length > 0) await encryptBlock(buffer, controller);
     },
   });
@@ -164,7 +161,7 @@ export function decryptStream(
       buf = append(buf, chunk);
 
       if (!headerParsed) {
-        if (buf.length < HEADER_SIZE) return; // need more data
+        if (buf.length < HEADER_SIZE) return;
 
         let offset = 0;
         const version = buf[offset]; offset += VERSION_SIZE;
@@ -178,8 +175,6 @@ export function decryptStream(
         headerParsed = true;
       }
 
-      // Flush all complete blocks, but hold back the last MAX_ENC_BLOCK_SIZE bytes
-      // Might be last block, might not
       while (buf.length > MAX_ENC_BLOCK_SIZE) {
         await decryptBlock(buf.slice(0, MAX_ENC_BLOCK_SIZE), controller);
         buf = buf.slice(MAX_ENC_BLOCK_SIZE);
@@ -200,7 +195,6 @@ export function decryptStream(
   return input.pipeThrough(transform);
 }
 
-// For easy use if a streaming API is not needed (possible library use)
 export const encryptFile = async (data: Uint8Array, password: string): Promise<Uint8Array> => {
   if (data.length === 0) throw new Error('Cannot encrypt empty file.');
   const stream = encryptStream(
@@ -210,7 +204,6 @@ export const encryptFile = async (data: Uint8Array, password: string): Promise<U
   return collectStream(stream);
 };
 
-// For easy use if a streaming API is not needed (possible library use)
 export const decryptFile = async (data: Uint8Array, password: string): Promise<Uint8Array> => {
   const stream = decryptStream(
     new ReadableStream({ start(c) { c.enqueue(data); c.close(); } }),

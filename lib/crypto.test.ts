@@ -4,12 +4,11 @@ import { unlink, stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { encryptFile, decryptFile, encryptStream, decryptStream } from './crypto';
 
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MiB — must match crypto.ts
+const CHUNK_SIZE = 5 * 1024 * 1024;
 const PASSWORD = 'test-password';
 
 const encode = (s: string) => new TextEncoder().encode(s);
 
-// crypto.getRandomValues is capped at 65536 bytes per call
 const randomBytes = (size: number): Uint8Array => {
   const buf = new Uint8Array(size);
   for (let offset = 0; offset < size; offset += 65536) {
@@ -24,7 +23,6 @@ const roundtrip = async (plaintext: Uint8Array, password = PASSWORD) => {
   return decrypted;
 };
 
-// We use `i&0xff` (i.e. [0,1,...,255,0,1]) so we know what the decrypted stream should look like without storing the plaintext
 function makePlaintextStream(totalBytes: number, chunkSize = 64 * 1024): ReadableStream<Uint8Array> {
   let sent = 0;
   return new ReadableStream({
@@ -39,7 +37,6 @@ function makePlaintextStream(totalBytes: number, chunkSize = 64 * 1024): Readabl
   });
 }
 
-// Expects the byte pattern described above
 async function verifyDecryptedStream(stream: ReadableStream<Uint8Array>, totalBytes: number): Promise<void> {
   const reader = stream.getReader();
   let verified = 0;
@@ -89,20 +86,16 @@ async function streamToFile(stream: ReadableStream<Uint8Array>, path: string): P
   return written;
 }
 
-// Get ram via `/proc/meminfo`
 async function totalRamBytes(): Promise<number> {
   try {
     const text = await import('node:fs/promises').then(m => m.readFile('/proc/meminfo', 'utf8'));
     const match = text.match(/MemTotal:\s+(\d+)\s+kB/);
     if (match) return parseInt(match[1], 10) * 1024;
   } catch {
-    /* only works on linux */
-    console.log("Running not on linux? Can't read mem, defaulting to 16GiB")
+    console.log("Can't read /proc/meminfo, defaulting to 16 GiB")
   }
-  return 16 * 1024 ** 3; // fallback: 16 GiB
+  return 16 * 1024 ** 3;
 }
-
-// ── Tests ───────────────────────────────────────────────────────────────────────
 
 describe('encryptFile / decryptFile', () => {
   it('happy path: "hello world"', async () => {
@@ -131,7 +124,7 @@ describe('encryptFile / decryptFile', () => {
 });
 
 describe('streaming encrypt/decrypt (100 MB)', () => {
-  const SIZE = 100 * 1024 * 1024; // 100 MiB
+  const SIZE = 100 * 1024 * 1024;
 
   it('round-trips a 100 MB stream correctly', { timeout: 60_000 }, async () => {
     const plainStream = makePlaintextStream(SIZE);
@@ -140,10 +133,6 @@ describe('streaming encrypt/decrypt (100 MB)', () => {
     await verifyDecryptedStream(decStream, SIZE);
   });
 });
-
-// ── Optional: larger-than-RAM streaming test ────────────────────────────────────
-// Run with: RUN_LARGE_FILE_TEST=1 LARGE_FILE_TMP_DIR=/home/$(USER)/ bun vitest --testTimeout=600000
-// Defaults to /tmp if LARGE_FILE_TMP_DIR is not set, but /tmp is usually tmpfs so it may ENOSPC.
 
 describe('large-file streaming (opt-in)', () => {
   const skip = !process.env.RUN_LARGE_FILE_TEST;
@@ -159,7 +148,7 @@ describe('large-file streaming (opt-in)', () => {
 
     const tmpDir = (process.env.LARGE_FILE_TMP_DIR ?? '/tmp').replace(/\/$/, '');
     const encPath = `${tmpDir}/seal3d-large-test.encrypted`;
-    const cleanup = async () => { try { await unlink(encPath); } catch { /* already gone */ } };
+    const cleanup = async () => { try { await unlink(encPath); } catch { } };
 
     try {
       console.log('Encrypting...');
@@ -169,7 +158,6 @@ describe('large-file streaming (opt-in)', () => {
       const encBytes = await streamToFile(encStream, encPath);
       console.log(`Encrypted ${GiB(encBytes)} in ${((Date.now() - encStart) / 1000).toFixed(1)}s`);
 
-      // Sanity check: encrypted file must be larger than plaintext (IV + auth tags)
       const { size: encSize } = await stat(encPath);
       expect(encSize).toBeGreaterThan(targetBytes);
 
@@ -185,3 +173,4 @@ describe('large-file streaming (opt-in)', () => {
     }
   });
 });
+

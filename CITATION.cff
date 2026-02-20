@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Mattfeld"
+  given-names: "Valerius Albert Gongjus"
+  orcid: "https://orcid.org/0000-0003-0263-0332"
+- family-names: "Quentin"
+  given-names: "Lars"
+title: "Seal3D"
+version: 0.1.0
+date-released: 2026-02-20
+url: "https://github.com/valerius21/seal3d"

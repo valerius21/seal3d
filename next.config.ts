@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
+import { readFileSync } from "fs";
+
+const { version } = JSON.parse(readFileSync("./package.json", "utf-8"));
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  env: {
+    APP_VERSION: version,
+  },
 };
 
 export default nextConfig;

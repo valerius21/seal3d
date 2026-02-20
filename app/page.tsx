@@ -292,7 +292,7 @@ export default function Home() {
               </a>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
-              © 2025–2026 Seal3D · Open Source under MIT License
+              © 2025–2026 Seal3D · v{process.env.APP_VERSION} · Open Source under MIT License
             </p>
           </div>
         </footer>

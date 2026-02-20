@@ -1,0 +1,14 @@
+node_modules
+.next
+.open-next
+.wrangler
+.devenv
+.devenv.flake.nix
+.direnv
+.git
+.github
+coverage
+*.tsbuildinfo
+next-env.d.ts
+.env*
+.DS_Store

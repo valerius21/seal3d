@@ -7,8 +7,10 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
+const baseUrl = `https://${process.env.APP_HOSTNAME}`;
+
 export const metadata: Metadata = {
-  metadataBase: new URL('https://seal3d.app'),
+  metadataBase: new URL(baseUrl),
   title: {
     default: "Seal3D - Client-Side File Encryption",
     template: "%s | Seal3D"
@@ -39,7 +41,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://seal3d.app",
+    url: baseUrl,
     title: "Seal3D - Client-Side File Encryption",
     description: "Secure AES-256-GCM file encryption powered by Web Crypto API. A modern hat.sh alternative with zero server uploads.",
     siteName: "Seal3D",
@@ -71,7 +73,7 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.json",
   alternates: {
-    canonical: "https://seal3d.app"
+    canonical: baseUrl
   },
 
 };

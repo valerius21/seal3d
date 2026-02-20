@@ -24,6 +24,86 @@ const roundtrip = async (plaintext: Uint8Array, password = PASSWORD) => {
   return decrypted;
 };
 
+// We use `i&0xff` (i.e. [0,1,...,255,0,1]) so we know what the decrypted stream should look like without storing the plaintext
+function makePlaintextStream(totalBytes: number, chunkSize = 64 * 1024): ReadableStream<Uint8Array> {
+  let sent = 0;
+  return new ReadableStream({
+    pull(controller) {
+      if (sent >= totalBytes) { controller.close(); return; }
+      const size = Math.min(chunkSize, totalBytes - sent);
+      const buf = new Uint8Array(size);
+      for (let i = 0; i < size; i++) buf[i] = (sent + i) & 0xff;
+      sent += size;
+      controller.enqueue(buf);
+    },
+  });
+}
+
+// Expects the byte pattern described above
+async function verifyDecryptedStream(stream: ReadableStream<Uint8Array>, totalBytes: number): Promise<void> {
+  const reader = stream.getReader();
+  let verified = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (let i = 0; i < value.length; i++) {
+      const expected = (verified + i) & 0xff;
+      if (value[i] !== expected) {
+        throw new Error(
+          `Byte mismatch at offset ${verified + i}: expected ${expected}, got ${value[i]}`
+        );
+      }
+    }
+    verified += value.length;
+  }
+  if (verified !== totalBytes) {
+    throw new Error(`Length mismatch: expected ${totalBytes} bytes, got ${verified}`);
+  }
+}
+
+function nodeToWebStream(readable: Readable): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      readable.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
+      readable.on('end', () => controller.close());
+      readable.on('error', (err) => controller.error(err));
+    },
+    cancel() { readable.destroy(); },
+  });
+}
+
+async function streamToFile(stream: ReadableStream<Uint8Array>, path: string): Promise<number> {
+  const writer = createWriteStream(path);
+  const reader = stream.getReader();
+  let written = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      written += value.byteLength;
+      await new Promise<void>((res, rej) => writer.write(value, (err: Error | null | undefined) => err ? rej(err) : res()));
+    }
+  } finally {
+    await new Promise<void>((res, rej) => writer.end((err: Error | null | undefined) => err ? rej(err) : res()));
+  }
+  return written;
+}
+
+// Get ram via `/proc/meminfo`
+async function totalRamBytes(): Promise<number> {
+  try {
+    const text = await import('node:fs/promises').then(m => m.readFile('/proc/meminfo', 'utf8'));
+    const match = text.match(/MemTotal:\s+(\d+)\s+kB/);
+    if (match) return parseInt(match[1], 10) * 1024;
+  } catch {
+    /* only works on linux */
+    console.log("Running not on linux? Can't read mem, defaulting to 16GiB")
+  }
+  return 16 * 1024 ** 3; // fallback: 16 GiB
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────────
+
 describe('encryptFile / decryptFile', () => {
   it('happy path: "hello world"', async () => {
     const plaintext = encode('hello world');
@@ -50,92 +130,21 @@ describe('encryptFile / decryptFile', () => {
   });
 });
 
+describe('streaming encrypt/decrypt (100 MB)', () => {
+  const SIZE = 100 * 1024 * 1024; // 100 MiB
 
-//////////////////////
-// huge optional test to test streaming
-// run with: `RUN_LARGE_FILE_TEST=1 LARGE_FILE_TMP_DIR=/home/$(USER)/ bun vitest --testTimeout=600000`
-// it defaults to `/tmp` if `LARGE_FILE_TMP_DIR` is not set, but its usually a special tmpfs so it will ENOSPC
-//////////////////////
-
-// Get ram via `/proc/meminfo`
-async function totalRamBytes(): Promise<number> {
-  try {
-    const text = await import('node:fs/promises').then(m => m.readFile('/proc/meminfo', 'utf8'));
-    const match = text.match(/MemTotal:\s+(\d+)\s+kB/);
-    if (match) return parseInt(match[1], 10) * 1024;
-  } catch {
-    /* only works on linux */
-    console.log("Running not on linux? Can't read mem, defaulting to 16GiB")
-  }
-  return 16 * 1024 ** 3; // fallback: 16 GiB
-}
-
-function nodeToWebStream(readable: Readable): ReadableStream<Uint8Array> {
-  return new ReadableStream({
-    start(controller) {
-      readable.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
-      readable.on('end', () => controller.close());
-      readable.on('error', (err) => controller.error(err));
-    },
-    cancel() { readable.destroy(); },
+  it('round-trips a 100 MB stream correctly', { timeout: 60_000 }, async () => {
+    const plainStream = makePlaintextStream(SIZE);
+    const encStream = encryptStream(plainStream, PASSWORD);
+    const decStream = decryptStream(encStream, PASSWORD);
+    await verifyDecryptedStream(decStream, SIZE);
   });
-}
+});
 
-async function streamToFile(stream: ReadableStream<Uint8Array>, path: string): Promise<number> {
-  const writer = createWriteStream(path);
-  const reader = stream.getReader();
-  let written = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      written += value.byteLength;
-      await new Promise<void>((res, rej) => writer.write(value, err => err ? rej(err) : res()));
-    }
-  } finally {
-    await new Promise<void>((res, rej) => writer.end((err: Error | null | undefined) => err ? rej(err) : res()));
-  }
-  return written;
-}
+// ── Optional: larger-than-RAM streaming test ────────────────────────────────────
+// Run with: RUN_LARGE_FILE_TEST=1 LARGE_FILE_TMP_DIR=/home/$(USER)/ bun vitest --testTimeout=600000
+// Defaults to /tmp if LARGE_FILE_TMP_DIR is not set, but /tmp is usually tmpfs so it may ENOSPC.
 
-// We use `i&0xff` (i.e. [0,1,...,255,0,1]) so know what the decrypted stream should look like without storing the plain
-function makePlaintextStream(totalBytes: number, chunkSize = 64 * 1024): ReadableStream<Uint8Array> {
-  let sent = 0;
-  return new ReadableStream({
-    pull(controller) {
-      if (sent >= totalBytes) { controller.close(); return; }
-      const size = Math.min(chunkSize, totalBytes - sent);
-      const buf = new Uint8Array(size);
-      for (let i = 0; i < size; i++) buf[i] = (sent + i) & 0xff;
-      sent += size;
-      controller.enqueue(buf);
-    },
-  });
-}
-
-// Expects pattern described above
-async function verifyDecryptedStream(stream: ReadableStream<Uint8Array>, totalBytes: number): Promise<void> {
-  const reader = stream.getReader();
-  let verified = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (let i = 0; i < value.length; i++) {
-      const expected = (verified + i) & 0xff;
-      if (value[i] !== expected) {
-        throw new Error(
-          `Byte mismatch at offset ${verified + i}: expected ${expected}, got ${value[i]}`
-        );
-      }
-    }
-    verified += value.length;
-  }
-  if (verified !== totalBytes) {
-    throw new Error(`Length mismatch: expected ${totalBytes} bytes, got ${verified}`);
-  }
-}
-
-// full run
 describe('large-file streaming (opt-in)', () => {
   const skip = !process.env.RUN_LARGE_FILE_TEST;
 

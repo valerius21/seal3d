@@ -93,7 +93,7 @@ async function streamToFile(stream: ReadableStream<Uint8Array>, path: string): P
       await new Promise<void>((res, rej) => writer.write(value, err => err ? rej(err) : res()));
     }
   } finally {
-    await new Promise<void>((res, rej) => writer.end(err => err ? rej(err) : res()));
+    await new Promise<void>((res, rej) => writer.end((err: Error | null | undefined) => err ? rej(err) : res()));
   }
   return written;
 }

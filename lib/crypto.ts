@@ -42,14 +42,14 @@ export const deriveKey = async (password: string, salt: BufferSource): Promise<C
 };
 
 // Build AAD for block i: fileId (16 bytes) || blockIndex (uint32, big-endian, 4 bytes)
-const buildAAD = (fileId: Uint8Array, blockIndex: number): Uint8Array => {
+const buildAAD = (fileId: Uint8Array, blockIndex: number): Uint8Array<ArrayBuffer> => {
   const aad = new Uint8Array(FILE_ID_SIZE + 4);
   aad.set(fileId, 0);
   new DataView(aad.buffer).setUint32(FILE_ID_SIZE, blockIndex, false /* big-endian */);
   return aad;
 };
 
-const append = (buf: Uint8Array, chunk: Uint8Array): Uint8Array => {
+const append = (buf: Uint8Array, chunk: Uint8Array): Uint8Array<ArrayBuffer> => {
   const merged = new Uint8Array(buf.length + chunk.length);
   merged.set(buf, 0);
   merged.set(chunk, buf.length);
@@ -74,7 +74,7 @@ export function encryptStream(
   let key: CryptoKey;
 
   const encryptBlock = async (
-    plaintext: Uint8Array,
+    plaintext: Uint8Array<ArrayBuffer>,
     controller: TransformStreamDefaultController<Uint8Array>
   ): Promise<void> => {
     const iv  = crypto.getRandomValues(new Uint8Array(IV_SIZE));

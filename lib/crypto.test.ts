@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { unlink, stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { encryptFile, decryptFile, encryptStream, decryptStream } from './crypto';
+import { createZipFromFiles, extractZip, verifyZip } from './zip';
 
 const CHUNK_SIZE = 5 * 1024 * 1024;
 const PASSWORD = 'test-password';
@@ -131,6 +132,163 @@ describe('streaming encrypt/decrypt (100 MB)', () => {
     const encStream = encryptStream(plainStream, PASSWORD);
     const decStream = decryptStream(encStream, PASSWORD);
     await verifyDecryptedStream(decStream, SIZE);
+  });
+});
+
+describe('multi-file archive encrypt/decrypt', () => {
+  /** Helper: create a browser-like File from a string. */
+  function makeFile(name: string, content: string): File {
+    const encoded = new TextEncoder().encode(content);
+    return new File([encoded.buffer as ArrayBuffer], name);
+  }
+
+  function makeFileFromBytes(name: string, bytes: Uint8Array): File {
+    return new File([bytes.buffer as ArrayBuffer], name);
+  }
+
+  it('encrypt then decrypt a ZIP archive of multiple text files', async () => {
+    const files = [
+      makeFile('a.txt', 'alpha content'),
+      makeFile('b.txt', 'beta content'),
+      makeFile('c.txt', 'gamma content'),
+    ];
+
+    // 1. Create ZIP
+    const zipBlob = await createZipFromFiles(files);
+    const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+
+    // Verify it's a valid ZIP
+    const entries = verifyZip(zipBytes);
+    expect(entries.sort()).toEqual(['a.txt', 'b.txt', 'c.txt']);
+
+    // 2. Encrypt the ZIP
+    const encrypted = await encryptFile(zipBytes, PASSWORD);
+    expect(encrypted.length).toBeGreaterThan(zipBytes.length);
+
+    // 3. Decrypt the ZIP
+    const decrypted = await decryptFile(encrypted, PASSWORD);
+    expect(Buffer.from(decrypted).equals(Buffer.from(zipBytes))).toBe(true);
+
+    // 4. Verify the decrypted data is still a valid ZIP with correct contents
+    const extracted = extractZip(decrypted);
+    expect(new TextDecoder().decode(extracted['a.txt'])).toBe('alpha content');
+    expect(new TextDecoder().decode(extracted['b.txt'])).toBe('beta content');
+    expect(new TextDecoder().decode(extracted['c.txt'])).toBe('gamma content');
+  });
+
+  it('encrypt then decrypt a ZIP with binary data', async () => {
+    const binaryData = randomBytes(10_000);
+    const files = [
+      makeFileFromBytes('binary.bin', binaryData),
+      makeFile('readme.txt', 'This archive contains binary data'),
+    ];
+
+    const zipBlob = await createZipFromFiles(files);
+    const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+
+    const encrypted = await encryptFile(zipBytes, PASSWORD);
+    const decrypted = await decryptFile(encrypted, PASSWORD);
+
+    const extracted = extractZip(decrypted);
+    expect(extracted['binary.bin']).toEqual(binaryData);
+    expect(new TextDecoder().decode(extracted['readme.txt'])).toBe(
+      'This archive contains binary data',
+    );
+  });
+
+  it('encrypt then decrypt a ZIP archive via streaming', async () => {
+    const files = [
+      makeFile('file1.md', '# Heading\n\nSome markdown content.'),
+      makeFile('file2.json', '{"key": "value", "num": 42}'),
+    ];
+
+    const zipBlob = await createZipFromFiles(files);
+
+    // Encrypt via streaming
+    const encStream = encryptStream(zipBlob.stream(), PASSWORD);
+    const encBlob = await new Response(encStream).blob();
+    const encBytes = new Uint8Array(await encBlob.arrayBuffer());
+
+    // Decrypt via streaming
+    const decStream = decryptStream(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(encBytes);
+          c.close();
+        },
+      }),
+      PASSWORD,
+    );
+    const decBlob = await new Response(decStream).blob();
+    const decBytes = new Uint8Array(await decBlob.arrayBuffer());
+
+    // Verify
+    const extracted = extractZip(decBytes);
+    expect(new TextDecoder().decode(extracted['file1.md'])).toBe(
+      '# Heading\n\nSome markdown content.',
+    );
+    expect(JSON.parse(new TextDecoder().decode(extracted['file2.json']))).toEqual({
+      key: 'value',
+      num: 42,
+    });
+  });
+
+  it('wrong password fails to decrypt a ZIP archive', async () => {
+    const files = [makeFile('secret.txt', 'top secret')];
+    const zipBlob = await createZipFromFiles(files);
+    const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+
+    const encrypted = await encryptFile(zipBytes, PASSWORD);
+
+    await expect(decryptFile(encrypted, 'wrong-password')).rejects.toThrow();
+  });
+
+  it('individual file encryption works for multiple files', async () => {
+    const files = [
+      makeFile('doc1.txt', 'document one'),
+      makeFile('doc2.txt', 'document two'),
+    ];
+
+    // Encrypt each file individually
+    const encryptedFiles: Uint8Array[] = [];
+    for (const file of files) {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const encrypted = await encryptFile(data, PASSWORD);
+      encryptedFiles.push(encrypted);
+    }
+
+    // Decrypt each individually
+    const decryptedContents: string[] = [];
+    for (const encrypted of encryptedFiles) {
+      const decrypted = await decryptFile(encrypted, PASSWORD);
+      decryptedContents.push(new TextDecoder().decode(decrypted));
+    }
+
+    expect(decryptedContents).toEqual(['document one', 'document two']);
+  });
+
+  it('large multi-file archive (multiple 5 MiB chunks)', { timeout: 30_000 }, async () => {
+    // Create files that total > 5 MiB to force multi-block encryption
+    const bigData = randomBytes(3 * 1024 * 1024); // 3 MiB
+    const files = [
+      makeFileFromBytes('big1.bin', bigData),
+      makeFileFromBytes('big2.bin', randomBytes(3 * 1024 * 1024)),
+    ];
+
+    const zipBlob = await createZipFromFiles(files);
+    const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+
+    // Must exceed 5 MiB to test multi-block
+    expect(zipBytes.length).toBeGreaterThan(CHUNK_SIZE);
+
+    const encrypted = await encryptFile(zipBytes, PASSWORD);
+    const decrypted = await decryptFile(encrypted, PASSWORD);
+
+    expect(Buffer.from(decrypted).equals(Buffer.from(zipBytes))).toBe(true);
+
+    const extracted = extractZip(decrypted);
+    expect(extracted['big1.bin']).toEqual(bigData);
+    expect(extracted['big2.bin'].length).toBe(3 * 1024 * 1024);
   });
 });
 

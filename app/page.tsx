@@ -1,29 +1,47 @@
 'use client';
 
 import { useState } from 'react';
-import { Lock, Unlock, Shield } from 'lucide-react';
+import { Lock, Unlock, Shield, Archive } from 'lucide-react';
 import { encryptStream, decryptStream } from '@/lib/crypto';
+import { createZipFromFiles } from '@/lib/zip';
 import { ModeSelector, type Mode } from '@/components/mode-selector';
 import { FileDropZone } from '@/components/file-drop-zone';
 import { PasswordInput } from '@/components/password-input';
 import { StatusMessage, type Status } from '@/components/status-message';
+import { ArchiveToggle, type MultiFileMode } from '@/components/archive-toggle';
 import { Footer } from '@/components/footer';
+
+/** Trigger a browser download from a ReadableStream. */
+async function downloadStream(stream: ReadableStream<Uint8Array>, filename: string): Promise<void> {
+  const blob = await new Response(stream).blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 export default function Home() {
   const [mode, setMode] = useState<Mode>('encrypt');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [password, setPassword] = useState('');
   const [processing, setProcessing] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
+  const [multiFileMode, setMultiFileMode] = useState<MultiFileMode>('archive');
 
-  const handleFileSelect = (selected: File) => {
-    setFile(selected);
+  const isMultiFile = files.length > 1;
+
+  const handleFileSelect = (selected: File[]) => {
+    setFiles(selected);
     setStatus(null);
   };
 
   const handleProcess = async () => {
-    if (!file || !password) {
-      setStatus({ type: 'error', message: 'Please select a file and enter a password' });
+    if (files.length === 0 || !password) {
+      setStatus({ type: 'error', message: 'Please select at least one file and enter a password.' });
       return;
     }
 
@@ -31,46 +49,89 @@ export default function Home() {
     setStatus(null);
 
     try {
-      let outputStream: ReadableStream<Uint8Array>;
-      let newFileName: string;
-
       if (mode === 'encrypt') {
-        outputStream = encryptStream(file.stream(), password);
-        newFileName = `${file.name}.encrypted`;
+        await handleEncrypt();
       } else {
-        if (file.size < 33) {
-          throw new Error('Invalid encrypted file format');
-        }
-        outputStream = decryptStream(file.stream(), password);
-        newFileName = file.name.endsWith('.encrypted')
-          ? file.name.slice(0, -10)
-          : `${file.name}.decrypted`;
+        await handleDecrypt();
       }
-
-      const blob = await new Response(outputStream).blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = newFileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      setStatus({
-        type: 'success',
-        message: mode === 'encrypt' ? 'File encrypted successfully!' : 'File decrypted successfully!',
-      });
     } catch {
       setStatus({
         type: 'error',
         message: mode === 'decrypt'
           ? 'Decryption failed. Wrong password or corrupted file.'
-          : 'Encryption failed. Please try again.'
+          : 'Encryption failed. Please try again.',
       });
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleEncrypt = async () => {
+    if (isMultiFile && multiFileMode === 'archive') {
+      // --- Archive mode: ZIP then encrypt ---
+      const zipBlob = await createZipFromFiles(files);
+
+      const outputStream = encryptStream(zipBlob.stream(), password);
+      await downloadStream(outputStream, 'seal3d-archive.zip.encrypted');
+
+      setStatus({ type: 'success', message: `${files.length} files archived and encrypted successfully!` });
+    } else if (isMultiFile && multiFileMode === 'individual') {
+      // --- Individual mode: encrypt each file separately ---
+      for (const file of files) {
+        const outputStream = encryptStream(file.stream(), password);
+        await downloadStream(outputStream, `${file.name}.encrypted`);
+      }
+
+      setStatus({ type: 'success', message: `${files.length} files encrypted successfully!` });
+    } else {
+      // --- Single file ---
+      const file = files[0];
+      const outputStream = encryptStream(file.stream(), password);
+      await downloadStream(outputStream, `${file.name}.encrypted`);
+      setStatus({ type: 'success', message: 'File encrypted successfully!' });
+    }
+  };
+
+  const handleDecrypt = async () => {
+    // Decrypt always operates on a single file (could be a .zip.encrypted)
+    const file = files[0];
+
+    if (file.size < 33) {
+      throw new Error('Invalid encrypted file format');
+    }
+
+    if (files.length > 1) {
+      // Decrypt multiple files individually, sequentially
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        if (f.size < 33) {
+          throw new Error(`Invalid encrypted file format: ${f.name}`);
+        }
+
+        const outputStream = decryptStream(f.stream(), password);
+        const newFileName = f.name.endsWith('.encrypted')
+          ? f.name.slice(0, -10)
+          : `${f.name}.decrypted`;
+        await downloadStream(outputStream, newFileName);
+      }
+
+      setStatus({ type: 'success', message: `${files.length} files decrypted successfully!` });
+    } else {
+      const outputStream = decryptStream(file.stream(), password);
+      const newFileName = file.name.endsWith('.encrypted')
+        ? file.name.slice(0, -10)
+        : `${file.name}.decrypted`;
+      await downloadStream(outputStream, newFileName);
+      setStatus({ type: 'success', message: 'File decrypted successfully!' });
+    }
+  };
+
+  const buttonLabel = () => {
+    if (processing) return null; // handled by spinner
+    if (mode === 'decrypt') return 'Decrypt & Save';
+    if (isMultiFile && multiFileMode === 'archive') return 'Archive & Encrypt';
+    if (isMultiFile && multiFileMode === 'individual') return `Encrypt ${files.length} Files`;
+    return 'Encrypt & Save';
   };
 
   return (
@@ -91,7 +152,12 @@ export default function Home() {
         <ModeSelector mode={mode} onChange={setMode} />
 
         <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-          <FileDropZone file={file} onFileSelect={handleFileSelect} />
+          <FileDropZone files={files} onFileSelect={handleFileSelect} />
+
+          {isMultiFile && mode === 'encrypt' && (
+            <ArchiveToggle multiFileMode={multiFileMode} onChange={setMultiFileMode} />
+          )}
+
           <PasswordInput
             password={password}
             onChange={setPassword}
@@ -104,7 +170,7 @@ export default function Home() {
           <div className="p-8 pt-0">
             <button
               onClick={handleProcess}
-              disabled={processing || !file || !password}
+              disabled={processing || files.length === 0 || !password}
               className="w-full py-4 px-6 rounded-xl font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:from-zinc-300 disabled:to-zinc-400 dark:disabled:from-zinc-700 dark:disabled:to-zinc-800 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 group"
             >
               {processing ? (
@@ -116,13 +182,17 @@ export default function Home() {
                 <>
                   {mode === 'encrypt' ? (
                     <>
-                      <Lock className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                      Encrypt & Save
+                      {isMultiFile && multiFileMode === 'archive' ? (
+                        <Archive className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                      ) : (
+                        <Lock className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                      )}
+                      {buttonLabel()}
                     </>
                   ) : (
                     <>
                       <Unlock className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                      Decrypt & Save
+                      {buttonLabel()}
                     </>
                   )}
                 </>

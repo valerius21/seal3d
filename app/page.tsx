@@ -82,8 +82,7 @@ export default function Home() {
         type: 'success',
         message: mode === 'encrypt' ? 'File encrypted successfully!' : 'File decrypted successfully!',
       });
-    } catch (error) {
-      console.error('Processing error:', error);
+    } catch {
       setStatus({
         type: 'error',
         message: mode === 'decrypt'
@@ -293,7 +292,7 @@ export default function Home() {
               </a>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
-              © 2025 Seal3D · Open Source under MIT License
+              © 2025–2026 Seal3D · Open Source under MIT License
             </p>
           </div>
         </footer>

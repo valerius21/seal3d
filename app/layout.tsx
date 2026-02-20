@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -7,13 +7,8 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  metadataBase: new URL('https://seal3d.vercel.app'),
+  metadataBase: new URL('https://seal3d.app'),
   title: {
     default: "Seal3D - Client-Side File Encryption",
     template: "%s | Seal3D"
@@ -44,7 +39,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://seal3d.vercel.app",
+    url: "https://seal3d.app",
     title: "Seal3D - Client-Side File Encryption",
     description: "Secure AES-256-GCM file encryption powered by Web Crypto API. A modern hat.sh alternative with zero server uploads.",
     siteName: "Seal3D",
@@ -76,13 +71,9 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.json",
   alternates: {
-    canonical: "https://seal3d.vercel.app"
+    canonical: "https://seal3d.app"
   },
-  verification: {
-    // Add your verification codes here when you have them
-    // google: 'google-site-verification-code',
-    // yandex: 'yandex-verification-code',
-  },
+
 };
 
 export default function RootLayout({
@@ -127,7 +118,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} antialiased`}
       >
         {children}
       </body>
